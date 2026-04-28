@@ -420,9 +420,9 @@
 
         async function init() {
             try {
-                const response = await fetch('/api/current_user');
+                const response = await fetch('/api/current_user', { cache: 'no-cache' });
                 const userData = await response.json();
-                currentUserId = userData.id;
+                currentUserId = parseInt(userData.id);
                 
                 document.getElementById('currentUserAvatar').textContent = userData.username.charAt(0).toUpperCase();
                 document.getElementById('currentUsername').textContent = userData.username;
@@ -452,17 +452,22 @@
             });
 
             socket.on('new_message', (message) => {
-                if (selectedUserId && 
-                    ((message.sender_id === currentUserId && message.recipient_id === selectedUserId) ||
-                     (message.sender_id === selectedUserId && message.recipient_id === currentUserId))) {
+                const msgSenderId = parseInt(message.sender_id);
+                const msgRecipientId = parseInt(message.recipient_id);
+                
+                console.log('收到新消息:', message, 'currentUserId:', currentUserId, 'selectedUserId:', selectedUserId);
+                
+                if (selectedUserId !== null && 
+                    ((msgSenderId === currentUserId && msgRecipientId === selectedUserId) ||
+                     (msgSenderId === selectedUserId && msgRecipientId === currentUserId))) {
                     appendMessage(message);
                     
-                    if (message.sender_id === selectedUserId) {
+                    if (msgSenderId === selectedUserId) {
                         markMessagesAsRead(selectedUserId);
                     }
                 }
                 
-                updateUserUnreadCount(message.sender_id === currentUserId ? message.recipient_id : message.sender_id);
+                updateUserUnreadCount(msgSenderId === currentUserId ? msgRecipientId : msgSenderId);
             });
 
             socket.on('user_status_changed', (data) => {
@@ -484,8 +489,13 @@
 
         async function loadUsers() {
             try {
-                const response = await fetch('/api/users');
-                users = await response.json();
+                const response = await fetch('/api/users', { cache: 'no-cache' });
+                const usersData = await response.json();
+                users = usersData.map(user => ({
+                    ...user,
+                    id: parseInt(user.id)
+                }));
+                console.log('加载的用户列表:', users);
                 renderUsersList();
             } catch (error) {
                 console.error('加载用户失败:', error);
@@ -501,9 +511,10 @@
             usersList.innerHTML = '';
             
             filteredUsers.forEach(user => {
+                const userId = parseInt(user.id);
                 const userItem = document.createElement('div');
-                userItem.className = `user-item ${selectedUserId === user.id ? 'active' : ''}`;
-                userItem.dataset.userId = user.id;
+                userItem.className = `user-item ${selectedUserId === userId ? 'active' : ''}`;
+                userItem.dataset.userId = userId;
                 
                 const statusClass = user.is_online ? 'online' : 'offline';
                 const statusText = user.is_online ? '在线' : '离线';
@@ -517,20 +528,21 @@
                             ${statusText}
                         </div>
                     </div>
-                    <span class="unread-count" data-unread="${user.id}" style="display: none;">0</span>
+                    <span class="unread-count" data-unread="${userId}" style="display: none;">0</span>
                 `;
                 
-                userItem.onclick = () => selectUser(user.id);
+                userItem.onclick = () => selectUser(userId);
                 usersList.appendChild(userItem);
             });
         }
 
         function updateUserStatus(userId, isOnline) {
-            const user = users.find(u => u.id === userId);
+            const numericUserId = parseInt(userId);
+            const user = users.find(u => u.id === numericUserId);
             if (user) {
                 user.is_online = isOnline;
                 
-                const userItem = document.querySelector(`.user-item[data-user-id="${userId}"]`);
+                const userItem = document.querySelector(`.user-item[data-user-id="${numericUserId}"]`);
                 if (userItem) {
                     const statusDot = userItem.querySelector('.status-dot');
                     const statusText = userItem.querySelector('.status');
@@ -542,22 +554,25 @@
         }
 
         async function selectUser(userId) {
-            selectedUserId = userId;
+            const numericUserId = parseInt(userId);
+            selectedUserId = numericUserId;
+            
+            console.log('选择用户:', numericUserId, '当前用户:', currentUserId);
             
             document.querySelectorAll('.user-item').forEach(item => {
                 item.classList.remove('active');
-                if (parseInt(item.dataset.userId) === userId) {
+                if (parseInt(item.dataset.userId) === numericUserId) {
                     item.classList.add('active');
                 }
             });
             
-            const unreadEl = document.querySelector(`[data-unread="${userId}"]`);
+            const unreadEl = document.querySelector(`[data-unread="${numericUserId}"]`);
             if (unreadEl) {
                 unreadEl.style.display = 'none';
                 unreadEl.textContent = '0';
             }
             
-            const user = users.find(u => u.id === userId);
+            const user = users.find(u => u.id === numericUserId);
             if (user) {
                 document.getElementById('chatAvatar').textContent = user.username.charAt(0).toUpperCase();
                 document.getElementById('chatUsername').textContent = user.username;
@@ -567,13 +582,18 @@
             document.getElementById('chatInputContainer').style.display = 'block';
             document.getElementById('noUserSelected').style.display = 'none';
             
-            await loadMessages(userId);
+            await loadMessages(numericUserId);
         }
 
         async function loadMessages(userId) {
+            const numericUserId = parseInt(userId);
+            console.log('加载消息, 用户ID:', numericUserId);
+            
             try {
-                const response = await fetch(`/api/messages/${userId}`);
+                const response = await fetch(`/api/messages/${numericUserId}`, { cache: 'no-cache' });
                 const messages = await response.json();
+                
+                console.log('收到消息列表:', messages.length, '条消息');
                 
                 const container = document.getElementById('messagesContainer');
                 container.innerHTML = '';
@@ -590,7 +610,8 @@
 
         function appendMessage(message, animate = true) {
             const container = document.getElementById('messagesContainer');
-            const isSent = message.sender_id === currentUserId;
+            const msgSenderId = parseInt(message.sender_id);
+            const isSent = msgSenderId === currentUserId;
             
             const messageEl = document.createElement('div');
             messageEl.className = `message ${isSent ? 'sent' : 'received'}`;
@@ -672,9 +693,10 @@
         }
 
         function updateUserUnreadCount(userId) {
-            if (userId === selectedUserId) return;
+            const numericUserId = parseInt(userId);
+            if (numericUserId === selectedUserId) return;
             
-            const unreadEl = document.querySelector(`[data-unread="${userId}"]`);
+            const unreadEl = document.querySelector(`[data-unread="${numericUserId}"]`);
             if (unreadEl) {
                 const count = parseInt(unreadEl.textContent) || 0;
                 unreadEl.textContent = count + 1;

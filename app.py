@@ -98,10 +98,16 @@ def get_users():
 @app.route('/api/messages/<int:user_id>')
 @login_required
 def get_messages(user_id):
+    print(f"获取消息 - 当前用户ID: {current_user.id}, 聊天对象ID: {user_id}")
+    
     messages = Message.query.filter(
         ((Message.sender_id == current_user.id) & (Message.recipient_id == user_id)) |
         ((Message.sender_id == user_id) & (Message.recipient_id == current_user.id))
     ).order_by(Message.timestamp).all()
+    
+    print(f"找到 {len(messages)} 条消息")
+    for msg in messages:
+        print(f"  消息ID: {msg.id}, 发送者: {msg.sender_id}, 接收者: {msg.recipient_id}")
     
     for message in messages:
         if message.sender_id == user_id and not message.is_read:
@@ -118,6 +124,7 @@ def get_current_user():
 @socketio.on('connect')
 def handle_connect():
     if current_user.is_authenticated:
+        print(f"用户连接: {current_user.id} ({current_user.username})")
         current_user.is_online = True
         current_user.last_seen = datetime.utcnow()
         db.session.commit()
@@ -126,6 +133,7 @@ def handle_connect():
 @socketio.on('disconnect')
 def handle_disconnect():
     if current_user.is_authenticated:
+        print(f"用户断开连接: {current_user.id} ({current_user.username})")
         current_user.is_online = False
         current_user.last_seen = datetime.utcnow()
         db.session.commit()
@@ -133,39 +141,60 @@ def handle_disconnect():
 
 @socketio.on('private_message')
 def handle_private_message(data):
-    recipient_id = data['recipient_id']
+    if not current_user.is_authenticated:
+        print("未认证用户尝试发送消息")
+        return
+    
+    recipient_id = int(data['recipient_id'])
     content = data['content']
+    sender_id = current_user.id
+    
+    print(f"发送消息: 发送者={sender_id}, 接收者={recipient_id}, 内容='{content}'")
     
     message = Message(
         content=content,
-        sender_id=current_user.id,
+        sender_id=sender_id,
         recipient_id=recipient_id
     )
     db.session.add(message)
     db.session.commit()
     
-    emit('new_message', message.to_dict(), room=str(recipient_id))
-    emit('new_message', message.to_dict(), room=str(current_user.id))
+    msg_dict = message.to_dict()
+    print(f"消息已保存: ID={message.id}")
+    
+    recipient_room = str(recipient_id)
+    sender_room = str(sender_id)
+    
+    print(f"发送到房间: 接收者房间={recipient_room}, 发送者房间={sender_room}")
+    
+    emit('new_message', msg_dict, room=recipient_room)
+    emit('new_message', msg_dict, room=sender_room)
 
 @socketio.on('join_user_room')
 def handle_join_user_room(data):
-    user_id = data['user_id']
-    join_room(str(user_id))
+    user_id = int(data['user_id'])
+    room_name = str(user_id)
+    print(f"用户 {current_user.id if current_user.is_authenticated else '未知'} 加入房间: {room_name}")
+    join_room(room_name)
 
 @socketio.on('leave_user_room')
 def handle_leave_user_room(data):
-    user_id = data['user_id']
-    leave_room(str(user_id))
+    user_id = int(data['user_id'])
+    room_name = str(user_id)
+    print(f"用户离开房间: {room_name}")
+    leave_room(room_name)
 
 @socketio.on('typing')
 def handle_typing(data):
-    recipient_id = data['recipient_id']
-    emit('user_typing', {'user_id': current_user.id}, room=str(recipient_id))
+    if current_user.is_authenticated:
+        recipient_id = int(data['recipient_id'])
+        emit('user_typing', {'user_id': current_user.id}, room=str(recipient_id))
 
 @socketio.on('stop_typing')
 def handle_stop_typing(data):
-    recipient_id = data['recipient_id']
-    emit('user_stop_typing', {'user_id': current_user.id}, room=str(recipient_id))
+    if current_user.is_authenticated:
+        recipient_id = int(data['recipient_id'])
+        emit('user_stop_typing', {'user_id': current_user.id}, room=str(recipient_id))
 
 if __name__ == '__main__':
     with app.app_context():
