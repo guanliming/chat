@@ -196,7 +196,15 @@ def handle_stop_typing(data):
         recipient_id = int(data['recipient_id'])
         emit('user_stop_typing', {'user_id': current_user.id}, room=str(recipient_id))
 
+@app.after_request
+def add_no_cache_headers(response):
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
+
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
-    socketio.run(app, host='0.0.0.0', port=5000, debug=True)
+    print("启动服务器 - 关闭debug模式以避免多进程问题")
+    socketio.run(app, host='0.0.0.0', port=5001, debug=False, use_reloader=False)

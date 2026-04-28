@@ -455,11 +455,20 @@
                 const msgSenderId = parseInt(message.sender_id);
                 const msgRecipientId = parseInt(message.recipient_id);
                 
-                console.log('收到新消息:', message, 'currentUserId:', currentUserId, 'selectedUserId:', selectedUserId);
+                console.log('=== 收到实时消息 ===');
+                console.log('消息ID:', message.id);
+                console.log('发送者:', msgSenderId);
+                console.log('接收者:', msgRecipientId);
+                console.log('当前用户:', currentUserId);
+                console.log('当前选中用户:', selectedUserId);
                 
-                if (selectedUserId !== null && 
+                const isRelevantToCurrentChat = selectedUserId !== null && 
                     ((msgSenderId === currentUserId && msgRecipientId === selectedUserId) ||
-                     (msgSenderId === selectedUserId && msgRecipientId === currentUserId))) {
+                     (msgSenderId === selectedUserId && msgRecipientId === currentUserId));
+                
+                console.log('与当前聊天相关:', isRelevantToCurrentChat);
+                
+                if (isRelevantToCurrentChat) {
                     appendMessage(message);
                     
                     if (msgSenderId === selectedUserId) {
@@ -585,23 +594,64 @@
             await loadMessages(numericUserId);
         }
 
+        function isMessageBelongsToCurrentChat(message, chatPartnerId) {
+            const msgSenderId = parseInt(message.sender_id);
+            const msgRecipientId = parseInt(message.recipient_id);
+            const currentId = parseInt(currentUserId);
+            const partnerId = parseInt(chatPartnerId);
+            
+            const isRelevant = (
+                (msgSenderId === currentId && msgRecipientId === partnerId) ||
+                (msgSenderId === partnerId && msgRecipientId === currentId)
+            );
+            
+            console.log('验证消息:', {
+                msgId: message.id,
+                sender: msgSenderId,
+                recipient: msgRecipientId,
+                currentUser: currentId,
+                chatPartner: partnerId,
+                isRelevant: isRelevant
+            });
+            
+            return isRelevant;
+        }
+
         async function loadMessages(userId) {
             const numericUserId = parseInt(userId);
-            console.log('加载消息, 用户ID:', numericUserId);
+            console.log('=== 加载消息 ===');
+            console.log('当前用户ID:', currentUserId);
+            console.log('聊天对象ID:', numericUserId);
             
             try {
-                const response = await fetch(`/api/messages/${numericUserId}`, { cache: 'no-cache' });
-                const messages = await response.json();
+                const url = `/api/messages/${numericUserId}?_t=${Date.now()}`;
+                console.log('请求URL:', url);
                 
-                console.log('收到消息列表:', messages.length, '条消息');
+                const response = await fetch(url, { 
+                    cache: 'no-store',
+                    headers: {
+                        'Cache-Control': 'no-cache, no-store, must-revalidate',
+                        'Pragma': 'no-cache'
+                    }
+                });
+                
+                const messages = await response.json();
+                console.log('API返回消息数量:', messages.length);
                 
                 const container = document.getElementById('messagesContainer');
                 container.innerHTML = '';
                 
+                let displayedCount = 0;
                 messages.forEach(message => {
-                    appendMessage(message, false);
+                    if (isMessageBelongsToCurrentChat(message, numericUserId)) {
+                        appendMessage(message, false);
+                        displayedCount++;
+                    } else {
+                        console.warn('⚠️ 过滤掉不相关的消息:', message);
+                    }
                 });
                 
+                console.log('实际显示消息数量:', displayedCount);
                 scrollToBottom();
             } catch (error) {
                 console.error('加载消息失败:', error);
@@ -609,12 +659,16 @@
         }
 
         function appendMessage(message, animate = true) {
-            const container = document.getElementById('messagesContainer');
             const msgSenderId = parseInt(message.sender_id);
             const isSent = msgSenderId === currentUserId;
             
+            console.log('appendMessage - 消息ID:', message.id, '发送者:', msgSenderId, '当前用户:', currentUserId, 'isSent:', isSent);
+            
+            const container = document.getElementById('messagesContainer');
             const messageEl = document.createElement('div');
             messageEl.className = `message ${isSent ? 'sent' : 'received'}`;
+            messageEl.dataset.messageId = message.id;
+            
             if (!animate) messageEl.style.animation = 'none';
             
             const time = message.timestamp ? new Date(message.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '';
@@ -622,7 +676,7 @@
             messageEl.innerHTML = `
                 <div class="message-content">
                     ${escapeHtml(message.content)}
-                    <div class="message-time">${time}</div>
+                    <div class="message-time">${time} (ID:${message.id})</div>
                 </div>
             `;
             
