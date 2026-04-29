@@ -564,34 +564,63 @@
 
         async function selectUser(userId) {
             const numericUserId = parseInt(userId);
+            
+            console.log('=== selectUser 开始 ===');
+            console.log('请求切换到用户:', numericUserId);
+            console.log('当前选中用户:', selectedUserId);
+            
             selectedUserId = numericUserId;
             
-            console.log('选择用户:', numericUserId, '当前用户:', currentUserId);
-            
-            document.querySelectorAll('.user-item').forEach(item => {
-                item.classList.remove('active');
-                if (parseInt(item.dataset.userId) === numericUserId) {
-                    item.classList.add('active');
+            try {
+                document.querySelectorAll('.user-item').forEach(item => {
+                    item.classList.remove('active');
+                    if (parseInt(item.dataset.userId) === numericUserId) {
+                        item.classList.add('active');
+                    }
+                });
+                
+                const unreadEl = document.querySelector(`[data-unread="${numericUserId}"]`);
+                if (unreadEl) {
+                    unreadEl.style.display = 'none';
+                    unreadEl.textContent = '0';
                 }
-            });
-            
-            const unreadEl = document.querySelector(`[data-unread="${numericUserId}"]`);
-            if (unreadEl) {
-                unreadEl.style.display = 'none';
-                unreadEl.textContent = '0';
+                
+                const user = users.find(u => u.id === numericUserId);
+                if (user) {
+                    const chatAvatar = document.getElementById('chatAvatar');
+                    const chatUsername = document.getElementById('chatUsername');
+                    if (chatAvatar) {
+                        chatAvatar.textContent = user.username ? user.username.charAt(0).toUpperCase() : '?';
+                    }
+                    if (chatUsername) {
+                        chatUsername.textContent = user.username || '未知用户';
+                    }
+                }
+                
+                const chatHeader = document.getElementById('chatHeader');
+                const chatInputContainer = document.getElementById('chatInputContainer');
+                const noUserSelected = document.getElementById('noUserSelected');
+                
+                if (chatHeader) chatHeader.style.display = 'flex';
+                if (chatInputContainer) chatInputContainer.style.display = 'block';
+                if (noUserSelected) noUserSelected.style.display = 'none';
+                
+                const messagesContainer = document.getElementById('messagesContainer');
+                if (messagesContainer) {
+                    messagesContainer.innerHTML = '<div class="welcome-message">加载消息中...</div>';
+                }
+                
+                console.log('开始加载消息，用户ID:', numericUserId);
+                await loadMessages(numericUserId);
+                console.log('=== selectUser 完成 ===');
+                
+            } catch (error) {
+                console.error('selectUser 执行出错:', error);
+                const messagesContainer = document.getElementById('messagesContainer');
+                if (messagesContainer && selectedUserId === numericUserId) {
+                    messagesContainer.innerHTML = '<div class="welcome-message">加载聊天失败，请重试</div>';
+                }
             }
-            
-            const user = users.find(u => u.id === numericUserId);
-            if (user) {
-                document.getElementById('chatAvatar').textContent = user.username.charAt(0).toUpperCase();
-                document.getElementById('chatUsername').textContent = user.username;
-            }
-            
-            document.getElementById('chatHeader').style.display = 'flex';
-            document.getElementById('chatInputContainer').style.display = 'block';
-            document.getElementById('noUserSelected').style.display = 'none';
-            
-            await loadMessages(numericUserId);
         }
 
         function isMessageBelongsToCurrentChat(message, chatPartnerId) {
@@ -619,10 +648,15 @@
 
         async function loadMessages(userId) {
             const numericUserId = parseInt(userId);
-            console.log('=== 加载消息 ===');
+            console.log('=== loadMessages 开始 ===');
             console.log('当前用户ID:', currentUserId);
             console.log('聊天对象ID:', numericUserId);
             console.log('当前选中用户ID:', selectedUserId);
+            
+            if (currentUserId === null || currentUserId === undefined) {
+                console.error('currentUserId 未初始化');
+                return;
+            }
             
             try {
                 const url = `/api/messages/${numericUserId}?_t=${Date.now()}`;
@@ -636,16 +670,31 @@
                     }
                 });
                 
+                if (!response.ok) {
+                    throw new Error(`HTTP 错误: ${response.status}`);
+                }
+                
                 const messages = await response.json();
                 console.log('API返回消息数量:', messages.length);
                 
                 if (selectedUserId !== numericUserId) {
-                    console.log('用户已切换，忽略此响应');
+                    console.log('用户已切换（当前选中:', selectedUserId, '，请求:', numericUserId, '），忽略此响应');
                     return;
                 }
                 
                 const container = document.getElementById('messagesContainer');
+                if (!container) {
+                    console.error('找不到 messagesContainer 元素');
+                    return;
+                }
+                
                 container.innerHTML = '';
+                
+                if (messages.length === 0) {
+                    console.log('没有消息，显示空状态');
+                    container.innerHTML = '<div class="welcome-message">暂无消息，开始聊天吧</div>';
+                    return;
+                }
                 
                 let displayedCount = 0;
                 messages.forEach(message => {
@@ -659,11 +708,16 @@
                 
                 console.log('实际显示消息数量:', displayedCount);
                 scrollToBottom();
+                
+                console.log('=== loadMessages 完成 ===');
+                
             } catch (error) {
-                console.error('加载消息失败:', error);
+                console.error('loadMessages 执行出错:', error);
                 if (selectedUserId === numericUserId) {
                     const container = document.getElementById('messagesContainer');
-                    container.innerHTML = '<div class="welcome-message">加载消息失败，请重试</div>';
+                    if (container) {
+                        container.innerHTML = '<div class="welcome-message">加载消息失败，请重试</div>';
+                    }
                 }
             }
         }
