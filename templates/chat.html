@@ -622,6 +622,7 @@
             console.log('=== 加载消息 ===');
             console.log('当前用户ID:', currentUserId);
             console.log('聊天对象ID:', numericUserId);
+            console.log('当前选中用户ID:', selectedUserId);
             
             try {
                 const url = `/api/messages/${numericUserId}?_t=${Date.now()}`;
@@ -637,6 +638,11 @@
                 
                 const messages = await response.json();
                 console.log('API返回消息数量:', messages.length);
+                
+                if (selectedUserId !== numericUserId) {
+                    console.log('用户已切换，忽略此响应');
+                    return;
+                }
                 
                 const container = document.getElementById('messagesContainer');
                 container.innerHTML = '';
@@ -655,6 +661,10 @@
                 scrollToBottom();
             } catch (error) {
                 console.error('加载消息失败:', error);
+                if (selectedUserId === numericUserId) {
+                    const container = document.getElementById('messagesContainer');
+                    container.innerHTML = '<div class="welcome-message">加载消息失败，请重试</div>';
+                }
             }
         }
 
